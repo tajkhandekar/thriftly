@@ -47,6 +47,7 @@ CREATE TABLE listings (
     web_link          TEXT,
     price_cents       INTEGER NOT NULL,
     condition         TEXT,
+    seller_username   text,
     listing_tsv       tsvector GENERATED ALWAYS AS (
                           to_tsvector('english',
                               coalesce(name, '') || ' ' || coalesce(description, ''))
