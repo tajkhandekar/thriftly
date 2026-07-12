@@ -83,6 +83,26 @@ CREATE TABLE price_history (
 );
 
 -- ============================================================
+-- agent_traces
+--   One row per agent run. 
+--   search_id                    : access for results + raw query
+--   result_count / broaden_count : success metrics for the eval set
+--   status / error_message       : outcome
+--   ended_at NULL                : run still in flight or crashed
+-- ============================================================
+CREATE TABLE agent_traces (
+    id            SERIAL PRIMARY KEY,
+    search_id     INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+    result_count  INTEGER NOT NULL DEFAULT 0,
+    broaden_count INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL CHECK (status IN ('ok', 'no_results', 'error')),
+    error_message TEXT,
+    tools         JSONB,
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at      TIMESTAMPTZ
+);
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
