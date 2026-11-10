@@ -53,6 +53,8 @@ migrations that have already been applied.
 | `GEMINI_API_KEY` | `llm.py`, `embeddings.py` | Gemini embeddings and the agent model |
 | `AGENT_MODEL` | `llm.py` | Agent model (default `gemini-3.5-flash`) |
 | `AGENT_RPM` | `llm.py` | Max agent model calls per minute across threads (default 5, the free tier) |
+| `EMAIL_BACKEND` | `notify.py` | `console` (default, print only), `file` (write `.eml` to `outbox/`) or `smtp` |
+| `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` | `notify.py` | SMTP delivery (STARTTLS) |
 
 ## Running things
 
@@ -68,6 +70,9 @@ Run these from `src/`:
 | `python search.py "warm boots" --max-price 80 --condition pre-owned` | Same, with hard filters (`--min-price`, `--max-price`, `--condition`, `--source`; condition matches by prefix) |
 | `python agent.py "used patagonia fleece under \$60"` | Save a search and run the agent: parse → eBay → hybrid search → grade → broaden if needed |
 | `python agent.py --rerun 12` | Re-run saved search 12 with its saved plan (no re-parse) |
+| `python monitor.py` | One monitoring tick: re-run due searches, queue alerts, send digests |
+| `python monitor.py --loop --every 300 --deactivate-stale` | Keep monitoring every 5 minutes and retire listings unseen for 7 days |
+| `python notify.py --preview` | Print pending alert digests without sending or marking them |
 | `python query_parser.py "nwt north face puffer under \$150"` | Show how a request is parsed into keywords and filters |
 | `python run_eval.py --parse-only` | Score the parser against `eval/queries.jsonl` |
 | `python run_eval.py --only q01 q19` | Full agent runs for some or all eval queries, with match, precision and latency metrics |
@@ -95,10 +100,32 @@ Matches go to `search_matches`. Every step, with its timing, goes to `agent_trac
 
 **Gemini quota:** each run makes about 2–5 calls to the agent model. The free tier allows 5 calls a minute and 20 a day per model, which is enough for a few test searches but not a full eval. Enable billing on the Gemini project and raise `AGENT_RPM` for real use.
 
+### Monitoring and alerts
+
+`monitor.py` re-runs saved searches on their `requery_interval_minutes`, which defaults to 60:
+
+- **Picking searches:** a search is due once its interval has passed since it last refreshed or last failed, so a failing search isn't retried on every tick. Each tick takes the oldest due searches, up to `--max-searches` (default 10).
+- **No double runs:** a per-search Postgres advisory lock keeps overlapping ticks or extra workers from running the same search twice.
+- **Cheap re-runs:** the saved plan, embedding and per-listing grades (`listing_grades`) are reused, so re-running an unchanged search makes no model calls.
+- **What gets alerted:**
+  - matches found for the first time in this run
+  - price drops of at least `--min-drop-pct` (default 5%) on listings the search had already matched
+
+  A search's first run queues nothing, because its first results aren't news. Each alert is queued at most once.
+- **Digests:** `notify.py` sends each user one digest of everything pending and marks it sent only once delivered. A failed send stays queued for the next tick. With `EMAIL_BACKEND=smtp`, `.local` addresses (the dev and eval users) are skipped.
+
+To run it from cron every 15 minutes:
+
+```
+*/15 * * * * cd /path/to/thriftly && python3 src/monitor.py --deactivate-stale >> monitor.log 2>&1
+```
+
+`--deactivate-stale` marks listings no fetch has seen for 7 days inactive. Only turn it on once the searches you care about are being monitored. Its first run will deactivate any old listings no active search fetches again.
+
 ## Layout
 
 ```
-migrations/          numbered SQL migrations (schema, hybrid_search + filters)
+migrations/          numbered SQL migrations (schema, hybrid_search + filters, monitoring)
 src/db.py            shared Postgres settings + connect()
 src/migrate.py       migration runner
 src/ebay_client.py   eBay Browse API client (cached app token)
@@ -109,5 +136,7 @@ src/llm.py           Gemini client, rate limit + retries, structured output
 src/query_parser.py  request -> keywords, description, filters
 src/agent.py         the search agent (parse, fetch, search, grade, broaden, trace)
 src/run_eval.py      eval runner for eval/queries.jsonl
+src/monitor.py       monitoring job: due searches -> re-run -> alerts
+src/notify.py        alert queue, digest emails, console/file/smtp delivery
 src/ebay_deletion_endpoint.py  eBay account-deletion webhook
 ```

@@ -8,7 +8,9 @@ Pipeline for one run of a saved search:
   2. fetch      eBay Browse for the keywords, price filter applied by eBay
   3. ingest     upsert listings + embed new ones (ingestion_pipeline)
   4. search     hybrid_search over the whole catalog with the filters
-  5. grade      the model scores each new candidate 0-1 against the request
+  5. grade      the model scores each candidate 0-1 against the request;
+                grades are cached in listing_grades, so a re-run only pays
+                for listings this search hasn't seen
   6. broaden    too few good matches -> next rung of BROADEN_LADDER, repeat 2-5
 
 Good matches (score >= RELEVANCE_THRESHOLD) go to search_matches; every step
@@ -109,8 +111,9 @@ Return one grade per candidate, using the ids given."""
 
 
 def grade(raw_query, parsed, rows):
-    """Score candidate listings 0-1 against the request. Returns {id: score};
-    candidates the model leaves out get 0."""
+    """Score candidate listings 0-1 against the request. Returns {id: score}
+    for the candidates the model actually graded (it occasionally skips one;
+    callers treat a missing id as 0 for this run without caching it)."""
     if not rows:
         return {}
     lines = "\n".join(
@@ -122,8 +125,7 @@ def grade(raw_query, parsed, rows):
               f"Candidates:\n{lines}")
     result = generate_structured(prompt, Grades, system=GRADE_SYSTEM)
     wanted = {r["id"] for r in rows}
-    scores = {g.id: min(max(g.score, 0.0), 1.0) for g in result.grades if g.id in wanted}
-    return {i: scores.get(i, 0.0) for i in wanted}
+    return {g.id: min(max(g.score, 0.0), 1.0) for g in result.grades if g.id in wanted}
 
 
 # ---------------------------------------------------------------------------
@@ -220,17 +222,47 @@ def _finish_trace(conn, trace_id, status, result_count, broaden_count, steps, er
         )
 
 
-def _save_matches(conn, search_id, scores):
+def _cached_grades(conn, search_id, listing_ids):
+    """Scores this search already gave these listings, {id: score}."""
+    if not listing_ids:
+        return {}
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT listing_id, score FROM listing_grades "
+            "WHERE search_id = %s AND listing_id = ANY(%s);",
+            (search_id, list(listing_ids)),
+        )
+        return dict(cur.fetchall())
+
+
+def _save_grades(conn, search_id, scores):
     if not scores:
         return
     with conn, conn.cursor() as cur:
         execute_values(
             cur,
-            "INSERT INTO search_matches (search_id, listing_id, relevance_score) VALUES %s "
+            "INSERT INTO listing_grades (search_id, listing_id, score) VALUES %s "
             "ON CONFLICT (search_id, listing_id) "
-            "DO UPDATE SET relevance_score = EXCLUDED.relevance_score;",
+            "DO UPDATE SET score = EXCLUDED.score, graded_at = now();",
             [(search_id, lid, score) for lid, score in scores.items()],
         )
+
+
+def _save_matches(conn, search_id, scores):
+    """Upsert matches; return the listing ids that are new for this search."""
+    if not scores:
+        return set()
+    with conn, conn.cursor() as cur:
+        rows = execute_values(
+            cur,
+            "INSERT INTO search_matches (search_id, listing_id, relevance_score) VALUES %s "
+            "ON CONFLICT (search_id, listing_id) "
+            "DO UPDATE SET relevance_score = EXCLUDED.relevance_score "
+            "RETURNING listing_id, (xmax = 0) AS inserted;",  # xmax = 0 -> fresh insert
+            [(search_id, lid, score) for lid, score in scores.items()],
+            fetch=True,
+        )
+    return {lid for lid, inserted in rows if inserted}
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +278,7 @@ class AgentResult:
     matches: list      # listing dicts + "relevance_score", best first
     broaden_count: int
     steps: list
+    new_match_ids: set = field(default_factory=set)  # matches first seen this run
 
 
 def _quietly(fn, *args, **kwargs):
@@ -311,13 +344,20 @@ def run_search(search_id):
                 rows = search(plan["keywords"], CANDIDATES, f, query_embedding=query_embedding)
                 out["candidates"] = len(rows)
 
-            # 5. grade only candidates we haven't scored yet
-            new = [r for r in rows if r["id"] not in scores]
-            with trace.step("grade", candidates=len(new)) as out:
-                new_scores = grade(raw_query, parsed, new)
-                out["good"] = sum(s >= RELEVANCE_THRESHOLD for s in new_scores.values())
+            # 5. grade candidates: reuse this search's cached grades, and ask
+            #    the model only about listings it has never graded
+            unseen = [r for r in rows if r["id"] not in scores]
+            cached = _cached_grades(conn, search_id, [r["id"] for r in unseen])
+            to_grade = [r for r in unseen if r["id"] not in cached]
+            with trace.step("grade", candidates=len(to_grade), cached=len(cached)) as out:
+                graded = grade(raw_query, parsed, to_grade)
+                _save_grades(conn, search_id, graded)
+                new_scores = {r["id"]: graded.get(r["id"], 0.0) for r in to_grade}
+                out["good"] = sum(s >= RELEVANCE_THRESHOLD
+                                  for s in {**cached, **new_scores}.values())
+            scores.update(cached)
             scores.update(new_scores)
-            rows_by_id.update({r["id"]: r for r in new})
+            rows_by_id.update({r["id"]: r for r in unseen})
 
             good = {i: s for i, s in scores.items() if s >= RELEVANCE_THRESHOLD}
             if len(good) >= MIN_GOOD_MATCHES:
@@ -335,7 +375,7 @@ def run_search(search_id):
             else:
                 break  # ladder exhausted
 
-        _save_matches(conn, search_id, good)
+        new_match_ids = _save_matches(conn, search_id, good)
         with conn, conn.cursor() as cur:
             cur.execute("UPDATE searches SET last_refreshed_at = now() WHERE id = %s;",
                         (search_id,))
@@ -349,7 +389,7 @@ def run_search(search_id):
         status = "ok" if matches else "no_results"
         _finish_trace(conn, trace_id, status, len(matches), broaden_count, trace.steps)
         return AgentResult(search_id, trace_id, status, parsed, matches,
-                           broaden_count, trace.steps)
+                           broaden_count, trace.steps, new_match_ids)
 
     except Exception as exc:
         conn.rollback()
@@ -372,9 +412,9 @@ def _print_result(result):
     print(f"  keywords: {p.keywords!r}  filters: {p.filters()}")
     for s in result.steps:
         detail = {k: v for k, v in s["output"].items() if k in
-                  ("items", "embedded", "candidates", "good", "rung", "keywords")}
+                  ("items", "embedded", "candidates", "cached", "good", "rung", "keywords")}
         print(f"  {s['step']:>2}. {s['tool']:<15} {s['ms']:>6} ms  {detail or ''}")
-    print(f"\n{len(result.matches)} match(es):")
+    print(f"\n{len(result.matches)} match(es), {len(result.new_match_ids)} new:")
     for r in result.matches:
         print(f"  {r['relevance_score']:.2f}  ${r['price_cents'] / 100:>8.2f}  "
               f"{(r['condition'] or '')[:22]:<22}  {r['name'][:60]}")
