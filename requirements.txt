@@ -1,6 +1,7 @@
 # Database
 psycopg2-binary>=2.9
 pgvector>=0.2
+numpy>=1.24
 
 # HTTP / eBay
 requests>=2.31
