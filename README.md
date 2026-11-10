@@ -58,19 +58,31 @@ Run these from `src/`:
 
 | Command | What it does |
 |---|---|
-| `python ingestion_pipeline.py` | Fetch eBay listings for a sample query and upsert them, with price history |
-| `python search.py "vintage leather jacket"` | Hybrid search over stored listings |
+| `python ingestion_pipeline.py "black denim jacket" -n 20` | Fetch eBay listings for a query, upsert them, and embed new or changed ones |
+| `python ingestion_pipeline.py --deactivate-stale` | Mark listings no fetch has seen for 7 days inactive. Only use it once searches are refreshed regularly. |
+| `python embeddings.py` | Embed any active listing that has no embedding (backfill) |
+| `python embeddings.py --all` | Re-embed every active listing (after changing the model or `listing_text()`) |
+| `python search.py "vintage leather jacket"` | Hybrid search over active listings |
+| `python search.py "warm boots" --max-price 80 --condition pre-owned` | Same, with hard filters (`--min-price`, `--max-price`, `--condition`, `--source`; condition matches by prefix) |
 | `python explain_hybrid_search.py "black denim jacket"` | `EXPLAIN ANALYZE` of the hybrid search query |
 | `python ebay_deletion_endpoint.py` | Flask server for eBay marketplace account-deletion notifications (port 8000) |
+
+### How listings stay fresh
+
+- **Upsert:** re-fetching a listing refreshes its title, description, price, condition, images and seller. A missing seller or empty image list doesn't overwrite a known one.
+- **Embeddings:** if the title, condition or description changed, its embedding is cleared and recomputed on the next embed pass, which ingestion runs automatically.
+- **Price history:** a row is recorded only when the price differs from the last one recorded.
+- **Stale listings:** `--deactivate-stale` marks listings no fetch has seen for 7 days inactive, and search skips inactive listings. It doesn't run automatically: until the monitoring job re-queries every saved search, "not fetched" only means "not searched again", not "sold".
 
 ## Layout
 
 ```
-migrations/          numbered SQL migrations (schema, hybrid_search function)
+migrations/          numbered SQL migrations (schema, hybrid_search + filters)
 src/db.py            shared Postgres settings + connect()
 src/migrate.py       migration runner
 src/ebay_client.py   eBay Browse API client (cached app token)
-src/ingestion_pipeline.py  parse Browse responses -> listings / price_history
-src/search.py        Gemini query embedding + hybrid_search()
+src/embeddings.py    Gemini embeddings (query + listing) and the backfill command
+src/ingestion_pipeline.py  eBay -> listings / price_history, then embed
+src/search.py        hybrid_search() with optional filters
 src/ebay_deletion_endpoint.py  eBay account-deletion webhook
 ```

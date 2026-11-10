@@ -2,56 +2,80 @@
 Thriftly -- semantic + keyword search over listings.
 
 search() embeds the query with Gemini (task_type="RETRIEVAL_QUERY") and calls
-the hybrid_search() Postgres function to fuse keyword + semantic ranking.
+the hybrid_search() Postgres function to fuse keyword + semantic ranking,
+optionally restricted by hard filters (price range, condition, source).
 
-Requires:  pip install google-genai pgvector psycopg2-binary python-dotenv
+  python src/search.py "vintage leather jacket"
+  python src/search.py "vintage leather jacket" --max-price 80 --condition Pre-owned
 """
 
-import math
-
+import numpy as np
 import psycopg2.extras
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from pgvector.psycopg2 import register_vector
 
 from db import connect
+from embeddings import embed_query
 
-load_dotenv()
-
-MODEL = "gemini-embedding-001"
-EMBED_DIM = 1536
-
-client = genai.Client()  # reads GEMINI_API_KEY from the environment
+# Filter keys search() accepts; they map 1:1 onto hybrid_search() arguments.
+FILTER_KEYS = ("min_price_cents", "max_price_cents", "conditions", "sources")
 
 
-def _embed_query(text):
-    """Embed a single search query -> 1536-dim unit vector."""
-    result = client.models.embed_content(
-        model=MODEL,
-        contents=text,
-        config=types.EmbedContentConfig(
-            task_type="RETRIEVAL_QUERY",
-            output_dimensionality=EMBED_DIM,
-        ),
-    )
-    values = result.embeddings[0].values
-    norm = math.sqrt(sum(x * x for x in values))
-    return [x / norm for x in values] if norm else values
+def _validate_filters(filters):
+    """Fail with a clear message instead of a Postgres type error."""
+    for key in ("min_price_cents", "max_price_cents"):
+        value = filters.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+            raise ValueError(f"{key} must be an int (cents) or None, got {value!r}")
+    for key in ("conditions", "sources"):
+        value = filters.get(key)
+        if value is not None and (
+            not isinstance(value, (list, tuple))
+            or not all(isinstance(v, str) for v in value)
+        ):
+            raise ValueError(f"{key} must be a list of strings or None, got {value!r}")
 
 
-def search(query, match_count=5):
+def search(query, match_count=5, filters=None):
     """Run hybrid (keyword + semantic) search for `query`, returning the
-    `match_count` best-matching listings as a list of dicts."""
-    query_embedding = _embed_query(query)
+    `match_count` best-matching active listings as a list of dicts.
+
+    `filters` may contain any of FILTER_KEYS, e.g.
+    {"max_price_cents": 8000, "conditions": ["Pre-owned"]}.
+    Conditions match case-insensitively by prefix ("Pre-owned" matches
+    "Pre-owned - Good"); see migrations/003_hybrid_search_filters.sql.
+    Missing or None values mean "no constraint".
+    """
+    filters = filters or {}
+    unknown = set(filters) - set(FILTER_KEYS)
+    if unknown:
+        raise ValueError(f"unknown search filters: {sorted(unknown)}")
+
+    _validate_filters(filters)
+
+    query_embedding = embed_query(query)
 
     conn = connect()
     try:
         register_vector(conn)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM hybrid_search(%s, %s::vector, %s);",
-                (query, query_embedding, match_count),
+                """
+                SELECT * FROM hybrid_search(
+                    query_text      => %(query)s,
+                    query_embedding => %(embedding)s::vector,
+                    match_count     => %(match_count)s,
+                    min_price_cents => %(min_price_cents)s,
+                    max_price_cents => %(max_price_cents)s,
+                    conditions      => %(conditions)s::text[],
+                    sources         => %(sources)s::text[]
+                );
+                """,
+                {
+                    "query": query,
+                    "embedding": np.array(query_embedding),  # sent as a pgvector value
+                    "match_count": match_count,
+                    **{k: filters.get(k) for k in FILTER_KEYS},
+                },
             )
             return cur.fetchall()
     finally:
@@ -59,8 +83,31 @@ def search(query, match_count=5):
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    q = " ".join(sys.argv[1:]) or "vintage leather jacket"
-    for row in search(q):
-        print(row["id"], row["name"], row["price_cents"])
+    parser = argparse.ArgumentParser(description="Hybrid search over listings.")
+    parser.add_argument("query", nargs="*", default=["vintage leather jacket"])
+    parser.add_argument("-n", type=int, default=5, help="number of results")
+    parser.add_argument("--min-price", type=float, help="dollars")
+    parser.add_argument("--max-price", type=float, help="dollars")
+    parser.add_argument("--condition", action="append",
+                        help="allowed condition prefix (repeatable), e.g. Pre-owned")
+    parser.add_argument("--source", action="append", help="e.g. ebay (repeatable)")
+    args = parser.parse_args()
+
+    def cents(dollars):
+        return None if dollars is None else int(round(dollars * 100))
+
+    results = search(
+        " ".join(args.query),
+        match_count=args.n,
+        filters={
+            "min_price_cents": cents(args.min_price),
+            "max_price_cents": cents(args.max_price),
+            "conditions": args.condition,
+            "sources": args.source,
+        },
+    )
+    for row in results:
+        print(f"{row['id']:>5}  ${row['price_cents'] / 100:>8.2f}  "
+              f"{(row['condition'] or ''):<12}  {row['name'][:60]}")
