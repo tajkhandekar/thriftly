@@ -17,7 +17,6 @@ import json
 import os
 import time
 
-import psycopg2
 import requests
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -27,6 +26,7 @@ from dotenv import load_dotenv
 
 # Reuse the app-token minter from the Browse client.
 from ebay_client import get_token
+from db import connect
 import hashlib
 
 load_dotenv()
@@ -35,14 +35,6 @@ VERIFICATION_TOKEN = os.environ["EBAY_VERIFICATION_TOKEN"]
 ENDPOINT_URL = os.environ["EBAY_ENDPOINT_URL"]
 
 PUBLIC_KEY_URL = "https://api.ebay.com/commerce/notification/v1/public_key/"
-
-DB = dict(
-    host=os.getenv("DB_HOST", "localhost"),
-    dbname=os.getenv("DB_NAME", "thriftly"),
-    user=os.getenv("DB_USER", os.getenv("USER")),
-    password=os.getenv("DB_PASSWORD", ""),
-    port=os.getenv("DB_PORT", "5432"),
-)
 
 app = Flask(__name__)
 
@@ -104,7 +96,7 @@ def delete_seller_data(username):
     """Remove every listing (and its child rows) belonging to a closed account."""
     if not username:
         return
-    with psycopg2.connect(**DB) as conn, conn.cursor() as cur:
+    with connect() as conn, conn.cursor() as cur:
         sub = "(SELECT id FROM listings WHERE seller_username = %s)"
         cur.execute(f"DELETE FROM price_history  WHERE listing_id IN {sub}", (username,))
         cur.execute(f"DELETE FROM search_matches WHERE listing_id IN {sub}", (username,))

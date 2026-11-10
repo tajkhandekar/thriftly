@@ -3,24 +3,14 @@ Parses an eBay Browse API response and loads it into the database
 """
 
 import json
-import os
 
-import psycopg2
 from psycopg2.extras import Json
 
 from ebay_client import fetch_listings
+from db import connect
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Connection settings
-DB = dict(
-    host=os.getenv("DB_HOST", "localhost"),
-    dbname=os.getenv("DB_NAME", "thriftly"),
-    user=os.getenv("DB_USER", os.getenv("USER")),
-    password=os.getenv("DB_PASSWORD", ""),
-    port=os.getenv("DB_PORT", "5432"),
-)
 
 
 def load_mock(path="mock_response.json"):
@@ -77,7 +67,7 @@ RETURNING id, price_cents;
 
 
 def save(items):
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     try:
         with conn, conn.cursor() as cur:
             for it in items:
@@ -97,7 +87,7 @@ def save(items):
 
 
 def show(limit=20):
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
