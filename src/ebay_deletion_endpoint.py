@@ -17,15 +17,14 @@ import json
 import os
 import time
 
-import requests
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 
-# Reuse the app-token minter from the Browse client.
-from ebay_client import get_token
+# Reuse the authenticated GET helper from the Browse client.
+from ebay_client import ebay_get
 from db import connect
 import hashlib
 
@@ -48,12 +47,7 @@ def get_public_key(kid):
     if hit and time.time() < hit["expires_at"]:
         return hit["pem"]
 
-    resp = requests.get(
-        PUBLIC_KEY_URL + kid,
-        headers={"Authorization": f"Bearer {get_token()}"},
-        timeout=30,
-    )
-    resp.raise_for_status()
+    resp = ebay_get(PUBLIC_KEY_URL + kid)
     # Response includes {"key": "-----BEGIN PUBLIC KEY-----\n...", "algorithm": "ECDSA", "digest": "SHA1"}
     pem = resp.json()["key"].encode()
     _key_cache[kid] = {"pem": pem, "expires_at": time.time() + 3600}
@@ -96,11 +90,14 @@ def delete_seller_data(username):
     """Remove every listing (and its child rows) belonging to a closed account."""
     if not username:
         return
-    with connect() as conn, conn.cursor() as cur:
-        sub = "(SELECT id FROM listings WHERE seller_username = %s)"
-        cur.execute(f"DELETE FROM price_history  WHERE listing_id IN {sub}", (username,))
-        cur.execute(f"DELETE FROM search_matches WHERE listing_id IN {sub}", (username,))
-        cur.execute("DELETE FROM listings WHERE seller_username = %s", (username,))
+    # price_history and search_matches rows go too via ON DELETE CASCADE.
+    # `with conn` only commits/rolls back, so close the connection explicitly.
+    conn = connect()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM listings WHERE seller_username = %s", (username,))
+    finally:
+        conn.close()
 
 @app.route("/ebay/deletion", methods=["GET", "POST"])
 def ebay_deletion():

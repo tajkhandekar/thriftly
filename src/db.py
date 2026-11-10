@@ -21,6 +21,6 @@ DB = dict(
 )
 
 
-def connect(**overrides):
-    """Open a new psycopg2 connection using DB settings (optionally overridden)."""
-    return psycopg2.connect(**{**DB, **overrides})
+def connect():
+    """Open a new psycopg2 connection using DB settings."""
+    return psycopg2.connect(**DB)

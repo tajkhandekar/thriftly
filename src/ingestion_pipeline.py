@@ -67,6 +67,7 @@ RETURNING id, price_cents;
 
 
 def save(items):
+    saved = 0
     conn = connect()
     try:
         with conn, conn.cursor() as cur:
@@ -81,7 +82,10 @@ def save(items):
                     "INSERT INTO price_history (listing_id, price_cents) VALUES (%s, %s);",
                     (listing_id, price_cents),
                 )
-        print(f"Upserted {len(items)} listings and recorded price history.")
+                saved += 1
+        skipped = len(items) - saved
+        print(f"Upserted {saved} listings and recorded price history"
+              f" (skipped {skipped} malformed).")
     finally:
         conn.close()
 

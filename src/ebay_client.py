@@ -44,18 +44,31 @@ def get_token():
     return _token_cache["token"]
 
 
+def ebay_get(url, headers=None, **kwargs):
+    """GET an eBay API with the app token. If eBay rejects the cached token
+    (401: revoked or rotated early), drop it, mint a fresh one, and retry once.
+    Raises for any non-2xx final response."""
+    for attempt in range(2):
+        resp = requests.get(
+            url,
+            headers={**(headers or {}), "Authorization": f"Bearer {get_token()}"},
+            timeout=30,
+            **kwargs,
+        )
+        if resp.status_code != 401 or attempt:
+            break
+        _token_cache.clear()
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_listings(query, limit=50):
     """Search eBay and return the raw Browse response (same shape as the mock)."""
-    resp = requests.get(
+    resp = ebay_get(
         "https://api.ebay.com/buy/browse/v1/item_summary/search",
-        headers={
-            "Authorization": f"Bearer {get_token()}",
-            "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
-        },
+        headers={"X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
         params={"q": query, "limit": limit},
-        timeout=30,
     )
-    resp.raise_for_status()
     data = resp.json()
     data.setdefault("itemSummaries", [])  # empty search omits the key
     return data

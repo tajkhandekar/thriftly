@@ -29,12 +29,16 @@ python src/migrate.py            # apply pending migrations
 python src/migrate.py --status   # show applied / pending
 ```
 
-If your database was created earlier from the old `schema.sql` and
-`hybrid_search.sql`, mark those as already applied once:
+If your database was created earlier by hand from the old `schema.sql` and
+`hybrid_search.sql`, mark those two as already applied once (later migrations
+stay pending and run normally):
 
 ```bash
-python src/migrate.py --baseline
+python src/migrate.py --baseline 002
 ```
+
+Only baseline what the database really has. If `hybrid_search()` was never
+created, use `--baseline 001` instead.
 
 To change the schema, add a new file such as `migrations/003_add_x.sql`. Don't edit
 migrations that have already been applied.
