@@ -1,5 +1,6 @@
 -- Thriftly schema
--- PostgreSQL + pgvector. Embedding dim = 1536 (OpenAI text-embedding-3-small);
+-- PostgreSQL + pgvector. Embedding dim = 1536 (Gemini gemini-embedding-001,
+-- output_dimensionality=1536, L2-normalized).
 
 CREATE EXTENSION IF NOT EXISTS vector;
 

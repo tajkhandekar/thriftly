@@ -1,5 +1,5 @@
 """
-ThriftScout -- semantic + keyword search over listings.
+Thriftly -- semantic + keyword search over listings.
 
 search() embeds the query with Gemini (task_type="RETRIEVAL_QUERY") and calls
 the hybrid_search() Postgres function to fuse keyword + semantic ranking.
@@ -8,24 +8,16 @@ Requires:  pip install google-genai pgvector psycopg2-binary python-dotenv
 """
 
 import math
-import os
 
-import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from pgvector.psycopg2 import register_vector
 
-load_dotenv()
+from db import connect
 
-DB = dict(
-    host=os.getenv("DB_HOST", "localhost"),
-    dbname=os.getenv("DB_NAME", "thriftly"),
-    user=os.getenv("DB_USER", os.getenv("USER")),
-    password=os.getenv("DB_PASSWORD", ""),
-    port=os.getenv("DB_PORT", "5432"),
-)
+load_dotenv()
 
 MODEL = "gemini-embedding-001"
 EMBED_DIM = 1536
@@ -53,7 +45,7 @@ def search(query, match_count=5):
     `match_count` best-matching listings as a list of dicts."""
     query_embedding = _embed_query(query)
 
-    conn = psycopg2.connect(**DB)
+    conn = connect()
     try:
         register_vector(conn)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
