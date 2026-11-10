@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thriftly</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23285e4b'/><text x='16' y='22' font-size='17' text-anchor='middle' fill='white' font-family='Georgia,serif'>T</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Thriftly</a>
+    <div class="account" id="account" hidden>
+      <span id="account-email"></span>
+      <button class="link" id="logout">Sign out</button>
+    </div>
+  </header>
+
+  <!-- Signed out -->
+  <main id="auth-view" class="auth" hidden>
+    <section class="auth-card">
+      <h1>Find it secondhand.</h1>
+      <p class="muted">Describe what you want. Thriftly searches eBay, keeps the listings
+        that actually match, and emails you when new ones show up or prices drop.</p>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-login" aria-selected="true">Sign in</button>
+        <button role="tab" id="tab-signup" aria-selected="false">Create account</button>
+      </div>
+      <form id="auth-form" novalidate>
+        <label>Email <input type="email" name="email" autocomplete="email" required></label>
+        <label>Password <input type="password" name="password" autocomplete="current-password"
+               minlength="8" required></label>
+        <p class="error" id="auth-error" role="alert" hidden></p>
+        <button class="primary" type="submit" id="auth-submit">Sign in</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Signed in -->
+  <main id="app-view" class="app" hidden>
+    <form id="search-form" class="searchbar">
+      <input id="search-input" name="query" maxlength="300" autocomplete="off"
+             placeholder="e.g. used Patagonia fleece under $60" aria-label="What are you looking for?">
+      <label class="watch-check"><input type="checkbox" id="search-watch" checked>
+        Watch for new listings</label>
+      <button class="primary" type="submit">Search</button>
+    </form>
+    <p class="error" id="search-error" role="alert" hidden></p>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>Your searches</h2>
+        <ul id="search-list" class="search-list"></ul>
+        <p id="search-list-empty" class="muted small" hidden>Nothing yet. Try a search above.</p>
+      </aside>
+
+      <section id="detail" class="detail" aria-live="polite">
+        <div class="placeholder muted" id="detail-empty">
+          <p>Pick a search on the left, or start a new one.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <template id="detail-template">
+    <div class="detail-head">
+      <div>
+        <h1 class="detail-title"></h1>
+        <div class="chips"></div>
+      </div>
+      <div class="detail-actions">
+        <label class="switch"><input type="checkbox" class="watch-toggle"><span></span> Watching</label>
+        <button class="secondary refresh">Refresh now</button>
+        <button class="link danger delete">Delete</button>
+      </div>
+    </div>
+    <div class="status"></div>
+    <div class="grid"></div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

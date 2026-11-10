@@ -43,6 +43,17 @@ created, use `--baseline 001` instead.
 To change the schema, add a new file such as `migrations/003_add_x.sql`. Don't edit
 migrations that have already been applied.
 
+## Running the web app
+
+```bash
+python src/migrate.py                                  # includes 005_sessions
+uvicorn api:app --app-dir src --port 8000              # add --reload while developing
+```
+
+Open http://localhost:8000, create an account, and describe what you're looking for. To look at the UI without spending eBay or Gemini calls, `python src/seed_demo.py` creates a demo account (`demo@thriftly.local`, dev only; the password is in the script) with a finished search built from listings already in the catalog. API docs are at `/api/docs`.
+
+Run `python src/monitor.py --loop` alongside the web app so watched searches get rechecked and alerts go out.
+
 ## Environment variables
 
 | Variable | Used by | Purpose |
@@ -53,6 +64,9 @@ migrations that have already been applied.
 | `GEMINI_API_KEY` | `llm.py`, `embeddings.py` | Gemini embeddings and the agent model |
 | `AGENT_MODEL` | `llm.py` | Agent model (default `gemini-3.5-flash`) |
 | `AGENT_RPM` | `llm.py` | Max agent model calls per minute across threads (default 5, the free tier) |
+| `COOKIE_SECURE` | `api.py` | `true` when served over HTTPS (session cookie gets `Secure`) |
+| `SESSION_DAYS` | `auth.py` | Session lifetime (default 30) |
+| `DB_POOL_MAX` | `db.py` | Pooled connections for the web app (default 10) |
 | `EMAIL_BACKEND` | `notify.py` | `console` (default, print only), `file` (write `.eml` to `outbox/`) or `smtp` |
 | `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` | `notify.py` | SMTP delivery (STARTTLS) |
 
@@ -77,7 +91,9 @@ Run these from `src/`:
 | `python run_eval.py --parse-only` | Score the parser against `eval/queries.jsonl` |
 | `python run_eval.py --only q01 q19` | Full agent runs for some or all eval queries, with match, precision and latency metrics |
 | `python explain_hybrid_search.py "black denim jacket"` | `EXPLAIN ANALYZE` of the hybrid search query |
-| `python ebay_deletion_endpoint.py` | Flask server for eBay marketplace account-deletion notifications (port 8000) |
+| `python ebay_deletion_endpoint.py` | Standalone Flask version of the eBay account-deletion webhook (the web app also serves it at `/ebay/deletion`) |
+| `python auth.py set-password you@example.com` | Set a password, e.g. to enable an account the CLI created; signs out its sessions |
+| `python seed_demo.py` | Dev only: demo account and a finished demo search |
 
 ### How listings stay fresh
 
@@ -99,6 +115,15 @@ One run of a saved search (`agent.run_search`):
 Matches go to `search_matches`. Every step, with its timing, goes to `agent_traces.tools`.
 
 **Gemini quota:** each run makes about 2–5 calls to the agent model. The free tier allows 5 calls a minute and 20 a day per model, which is enough for a few test searches but not a full eval. Enable billing on the Gemini project and raise `AGENT_RPM` for real use.
+
+### Web app and API
+
+`src/api.py` (FastAPI) serves the JSON API, the frontend in `src/web/` (plain HTML, CSS and JavaScript, no build step) and `/ebay/deletion`.
+
+- **Accounts:** passwords are hashed with scrypt. A session is a random token in an HttpOnly, SameSite=Lax cookie; only its SHA-256 is stored in `sessions`, so logging out or changing the password revokes it. CLI-created users (`!disabled`) can't log in until `auth.py set-password` is run for them.
+- **Searches:** `POST /api/searches {query, watch}` saves the search and runs the agent in the background. The page polls `GET /api/searches/{id}` until `state` leaves `queued` or `running`. "Watching" is `searches.is_active`, which is what the monitor rechecks.
+- **Other endpoints:** `PATCH` (watch and interval), `POST …/refresh`, `DELETE`, and `GET /api/listings/{id}/price-history`. Every endpoint only sees the signed-in user's own searches and their listings.
+- **Speed:** requests share a pool of autocommit connections (`db.pooled()`). A new TLS connection to RDS costs about 0.7 s, so loading a search takes about 0.2 s pooled instead of about 2 s.
 
 ### Monitoring and alerts
 
@@ -125,7 +150,7 @@ To run it from cron every 15 minutes:
 ## Layout
 
 ```
-migrations/          numbered SQL migrations (schema, hybrid_search + filters, monitoring)
+migrations/          numbered SQL migrations (schema, hybrid_search + filters, monitoring, sessions)
 src/db.py            shared Postgres settings + connect()
 src/migrate.py       migration runner
 src/ebay_client.py   eBay Browse API client (cached app token)
@@ -138,5 +163,9 @@ src/agent.py         the search agent (parse, fetch, search, grade, broaden, tra
 src/run_eval.py      eval runner for eval/queries.jsonl
 src/monitor.py       monitoring job: due searches -> re-run -> alerts
 src/notify.py        alert queue, digest emails, console/file/smtp delivery
+src/api.py           web app: JSON API + frontend + eBay deletion webhook
+src/auth.py          scrypt passwords, sessions, set-password command
+src/web/             frontend (index.html, app.js, style.css)
+src/seed_demo.py     dev-only demo account and search
 src/ebay_deletion_endpoint.py  eBay account-deletion webhook
 ```
