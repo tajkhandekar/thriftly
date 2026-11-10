@@ -20,6 +20,14 @@ from embeddings import embed_query
 FILTER_KEYS = ("min_price_cents", "max_price_cents", "conditions", "sources")
 
 
+def _as_array(embedding):
+    """list / numpy array / pgvector Vector (what a vector column reads back
+    as) -> 1-D float32 numpy array."""
+    if hasattr(embedding, "to_numpy"):
+        embedding = embedding.to_numpy()
+    return np.asarray(embedding, dtype=np.float32)
+
+
 def _validate_filters(filters):
     """Fail with a clear message instead of a Postgres type error."""
     for key in ("min_price_cents", "max_price_cents"):
@@ -35,7 +43,7 @@ def _validate_filters(filters):
             raise ValueError(f"{key} must be a list of strings or None, got {value!r}")
 
 
-def search(query, match_count=5, filters=None):
+def search(query, match_count=5, filters=None, query_embedding=None):
     """Run hybrid (keyword + semantic) search for `query`, returning the
     `match_count` best-matching active listings as a list of dicts.
 
@@ -44,6 +52,10 @@ def search(query, match_count=5, filters=None):
     Conditions match case-insensitively by prefix ("Pre-owned" matches
     "Pre-owned - Good"); see migrations/003_hybrid_search_filters.sql.
     Missing or None values mean "no constraint".
+
+    `query` drives the keyword half. Pass `query_embedding` to drive the
+    semantic half with a saved vector (e.g. searches.query_embedding)
+    instead of embedding `query`.
     """
     filters = filters or {}
     unknown = set(filters) - set(FILTER_KEYS)
@@ -52,7 +64,8 @@ def search(query, match_count=5, filters=None):
 
     _validate_filters(filters)
 
-    query_embedding = embed_query(query)
+    if query_embedding is None:
+        query_embedding = embed_query(query)
 
     conn = connect()
     try:
@@ -72,7 +85,7 @@ def search(query, match_count=5, filters=None):
                 """,
                 {
                     "query": query,
-                    "embedding": np.array(query_embedding),  # sent as a pgvector value
+                    "embedding": _as_array(query_embedding),  # sent as a pgvector value
                     "match_count": match_count,
                     **{k: filters.get(k) for k in FILTER_KEYS},
                 },

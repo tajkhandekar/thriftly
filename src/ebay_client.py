@@ -62,12 +62,18 @@ def ebay_get(url, headers=None, **kwargs):
     return resp
 
 
-def fetch_listings(query, limit=50):
-    """Search eBay and return the raw Browse response (same shape as the mock)."""
+def fetch_listings(query, limit=50, min_price_cents=None, max_price_cents=None):
+    """Search eBay and return the raw Browse response (same shape as the mock).
+    Price bounds are applied by eBay, so the `limit` results are all in range."""
+    params = {"q": query, "limit": limit}
+    if min_price_cents is not None or max_price_cents is not None:
+        lo = "" if min_price_cents is None else f"{min_price_cents / 100:.2f}"
+        hi = "" if max_price_cents is None else f"{max_price_cents / 100:.2f}"
+        params["filter"] = f"price:[{lo}..{hi}],priceCurrency:USD"
     resp = ebay_get(
         "https://api.ebay.com/buy/browse/v1/item_summary/search",
         headers={"X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
-        params={"q": query, "limit": limit},
+        params=params,
     )
     data = resp.json()
     data.setdefault("itemSummaries", [])  # empty search omits the key

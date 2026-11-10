@@ -14,29 +14,18 @@ import math
 
 import numpy as np
 from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 from pgvector.psycopg2 import register_vector
 from psycopg2.extras import execute_values
 
 from db import connect
+from llm import call_with_retries, get_client, http_options
 
 load_dotenv()
 
 MODEL = "gemini-embedding-001"
 EMBED_DIM = 1536
 BATCH_SIZE = 100  # max texts per embed_content request
-
-_client = None
-
-
-def _get_client():
-    """Create the Gemini client on first use (reads GEMINI_API_KEY)."""
-    global _client
-    if _client is None:
-        _client = genai.Client()
-    return _client
-
 
 def _normalize(values):
     # Gemini only returns unit vectors at 3072 dims; truncated ones need
@@ -46,13 +35,15 @@ def _normalize(values):
 
 
 def _embed(texts, task_type):
-    result = _get_client().models.embed_content(
-        model=MODEL,
-        contents=texts,
-        config=types.EmbedContentConfig(
-            task_type=task_type,
-            output_dimensionality=EMBED_DIM,
-        ),
+    config = types.EmbedContentConfig(
+        task_type=task_type,
+        output_dimensionality=EMBED_DIM,
+        http_options=http_options(),
+    )
+    result = call_with_retries(
+        lambda: get_client().models.embed_content(model=MODEL, contents=texts, config=config),
+        rate_limited=False,  # embeddings have their own, much higher quota
+        label=MODEL,
     )
     return [_normalize(e.values) for e in result.embeddings]
 

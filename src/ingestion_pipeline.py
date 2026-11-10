@@ -107,7 +107,9 @@ STALE_AFTER_DAYS = 7
 
 
 def save(items):
-    saved = 0
+    """Upsert parsed items and record price changes. Returns the listing ids
+    written, in input order (malformed items skipped)."""
+    ids = []
     conn = connect()
     try:
         with conn, conn.cursor() as cur:
@@ -121,9 +123,10 @@ def save(items):
                     RECORD_PRICE,
                     {"listing_id": listing_id, "price_cents": price_cents},
                 )
-                saved += 1
-        skipped = len(items) - saved
-        print(f"Upserted {saved} listings (skipped {skipped} malformed).")
+                ids.append(listing_id)
+        skipped = len(items) - len(ids)
+        print(f"Upserted {len(ids)} listings (skipped {skipped} malformed).")
+        return ids
     finally:
         conn.close()
 
