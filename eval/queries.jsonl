@@ -1,0 +1,24 @@
+{"id": "q01", "query": "patagonia better sweater fleece under $60", "expect": {"min_price_cents": null, "max_price_cents": 6000, "conditions": null, "keywords_any": ["patagonia", "fleece"]}}
+{"id": "q02", "query": "dr martens 1460 boots used under $80", "expect": {"min_price_cents": null, "max_price_cents": 8000, "conditions": ["Pre-owned"], "keywords_any": ["martens", "1460", "boots"]}}
+{"id": "q03", "query": "levi's 501 jeans, 32x30, under 50 bucks", "expect": {"min_price_cents": null, "max_price_cents": 5000, "conditions": null, "keywords_any": ["levi", "501", "jeans"]}}
+{"id": "q04", "query": "nintendo switch console, pre-owned, max $150", "expect": {"min_price_cents": null, "max_price_cents": 15000, "conditions": ["Pre-owned"], "keywords_any": ["nintendo", "switch"]}}
+{"id": "q05", "query": "used carhartt jacket under $75", "expect": {"min_price_cents": null, "max_price_cents": 7500, "conditions": ["Pre-owned"], "keywords_any": ["carhartt", "jacket"]}}
+{"id": "q06", "query": "le creuset dutch oven under $100", "expect": {"min_price_cents": null, "max_price_cents": 10000, "conditions": null, "keywords_any": ["creuset", "dutch", "oven"]}}
+{"id": "q07", "query": "something warm to wear hiking in winter, secondhand", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["Pre-owned"], "keywords_any": ["jacket", "hiking", "insulated"]}}
+{"id": "q08", "query": "a cute vintage lamp for my desk", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": null, "keywords_any": ["lamp", "vintage", "desk"]}}
+{"id": "q09", "query": "comfy shoes for standing all day", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": null, "keywords_any": ["comfortable", "shoes", "clogs"]}}
+{"id": "q10", "query": "cozy knit sweater for fall, something thrifted", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["Pre-owned"], "keywords_any": ["sweater", "knit", "cardigan"]}}
+{"id": "q11", "query": "a cool old-school watch with a leather strap", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": null, "keywords_any": ["watch", "leather", "vintage"]}}
+{"id": "q12", "query": "new with tags north face puffer", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["New"], "keywords_any": ["north", "face", "puffer"]}}
+{"id": "q13", "query": "used film camera that takes 35mm", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["Pre-owned"], "keywords_any": ["film", "camera", "35mm"]}}
+{"id": "q14", "query": "brand new sealed classic board game", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["New"], "keywords_any": ["board", "game", "sealed"]}}
+{"id": "q15", "query": "unworn leather work gloves, size large", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["New"], "keywords_any": ["leather", "gloves", "work"]}}
+{"id": "q16", "query": "between $20 and $40 for a used cast iron skillet", "expect": {"min_price_cents": 2000, "max_price_cents": 4000, "conditions": ["Pre-owned"], "keywords_any": ["cast", "iron", "skillet"]}}
+{"id": "q17", "query": "vintage denim jacket over $100", "expect": {"min_price_cents": 10000, "max_price_cents": null, "conditions": null, "keywords_any": ["denim", "jacket", "vintage"]}}
+{"id": "q18", "query": "a mechanical keyboard, at least $80", "expect": {"min_price_cents": 8000, "max_price_cents": null, "conditions": null, "keywords_any": ["mechanical", "keyboard", "switches"]}}
+{"id": "q19", "query": "lookin for a beat up leather jacket thats like 90s style nothing over 70 bucks", "expect": {"min_price_cents": null, "max_price_cents": 7000, "conditions": ["Pre-owned"], "keywords_any": ["leather", "jacket", "90s"]}}
+{"id": "q20", "query": "lol need a new ps5 controller under 40 bucks", "expect": {"min_price_cents": null, "max_price_cents": 4000, "conditions": ["New"], "keywords_any": ["controller", "ps5", "dualsense"]}}
+{"id": "q21", "query": "anyone got a used sennheser hd650 headphones", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": ["Pre-owned"], "keywords_any": ["sennheiser", "hd650", "headphones"]}}
+{"id": "q22", "query": "discontinued asics gel-kayano in a teal colorway, size 10", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": null, "keywords_any": ["asics", "kayano", "gel"]}}
+{"id": "q23", "query": "rare first pressing vinyl of blue nile hats", "expect": {"min_price_cents": null, "max_price_cents": null, "conditions": null, "keywords_any": ["hats", "nile", "vinyl"]}}
+{"id": "q24", "query": "vintage pokemon base set charizard holo card under $2000", "expect": {"min_price_cents": null, "max_price_cents": 200000, "conditions": null, "keywords_any": ["charizard", "holo", "base"]}}
