@@ -1,6 +1,10 @@
 """
 eBay Marketplace Account Deletion notification endpoint.
 
+The web app (api.py) serves this at /ebay/deletion using challenge_response()
+and handle_notification(); running this file directly still starts the
+standalone Flask version.
+
   GET  ?challenge_code=...  -> eBay's one-time validation handshake.
   POST (signed JSON)        -> a real deletion notification. VERIFY the signature
                               first, then purge that eBay user's data, reply 200.
@@ -30,15 +34,37 @@ import hashlib
 
 load_dotenv()
 
-VERIFICATION_TOKEN = os.environ["EBAY_VERIFICATION_TOKEN"]
-ENDPOINT_URL = os.environ["EBAY_ENDPOINT_URL"]
-
 PUBLIC_KEY_URL = "https://api.ebay.com/commerce/notification/v1/public_key/"
 
 app = Flask(__name__)
 
 # kid -> {"pem": bytes, "expires_at": epoch}. eBay says cache ~1 hour.
 _key_cache = {}
+
+
+def challenge_response(challenge_code):
+    """eBay's validation handshake: sha256(code + verification token + URL).
+    EBAY_ENDPOINT_URL must be exactly the URL registered with eBay."""
+    return hashlib.sha256(
+        (challenge_code
+         + os.environ["EBAY_VERIFICATION_TOKEN"]
+         + os.environ["EBAY_ENDPOINT_URL"]).encode()
+    ).hexdigest()
+
+
+def handle_notification(raw_body, signature_header):
+    """Verify a deletion notification and purge that seller's listings.
+    Returns True if it was verified and processed. Always acknowledge with
+    200 either way (eBay retries otherwise)."""
+    if not verify_signature(raw_body, signature_header):
+        print("Notification NOT verified — acknowledged but no data touched. "
+              "See VERIFY FAIL above for why.")
+        return False
+    payload = json.loads(raw_body or b"{}")
+    username = payload.get("notification", {}).get("data", {}).get("username")
+    delete_seller_data(username)
+    print("eBay deletion processed for:", username)
+    return True
 
 
 def get_public_key(kid):
@@ -103,23 +129,10 @@ def delete_seller_data(username):
 def ebay_deletion():
     # --- Validation handshake (GET) — unsigned, no verification needed ---
     if request.method == "GET":
-        challenge_code = request.args.get("challenge_code", "")
-        digest = hashlib.sha256(
-            (challenge_code + VERIFICATION_TOKEN + ENDPOINT_URL).encode()
-        ).hexdigest()
-        return jsonify(challengeResponse=digest), 200
-
-    raw_body = request.get_data()
-
+        code = request.args.get("challenge_code", "")
+        return jsonify(challengeResponse=challenge_response(code)), 200
     # Verify against the RAW bytes eBay sent
-    if verify_signature(raw_body, request.headers.get("x-ebay-signature")):
-        payload = json.loads(raw_body or b"{}")
-        username = payload.get("notification", {}).get("data", {}).get("username")
-        delete_seller_data(username)
-        print("eBay deletion processed for:", username)
-    else:
-        print("Notification NOT verified — acknowledged but no data touched. "
-              "See VERIFY FAIL above for why.")
+    handle_notification(request.get_data(), request.headers.get("x-ebay-signature"))
     return "", 200
 
 

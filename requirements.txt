@@ -8,6 +8,10 @@ requests>=2.31
 cryptography>=41
 Flask>=2.2
 
+# Web app
+fastapi>=0.115
+uvicorn>=0.30
+
 # Embeddings (Gemini gemini-embedding-001)
 google-genai>=1.0
 

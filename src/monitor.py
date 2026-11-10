@@ -43,6 +43,28 @@ LIMIT %s;
 """
 
 
+def run_locked(search_id):
+    """Run a search now unless another worker already is (same advisory lock
+    as the monitor). Returns the AgentResult, or None if it was locked.
+    Used by the web app for first runs and "refresh now"."""
+    conn = connect()
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s, %s);", (LOCK_CLASS, search_id))
+            if not cur.fetchone()[0]:
+                return None
+            cur.execute("UPDATE searches SET last_attempted_at = now() WHERE id = %s;",
+                        (search_id,))
+        try:
+            return run_search(search_id)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s, %s);", (LOCK_CLASS, search_id))
+    finally:
+        conn.close()
+
+
 def due_searches(conn, limit):
     with conn.cursor() as cur:
         cur.execute(_DUE, (limit,))
